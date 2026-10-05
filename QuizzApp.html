@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive Quiz App - Tugas Rutin 6</title>
+<style>
+  :root {
+    --bg: #0a0d16; --card: #121827; --line: #1f2a40; --text: #e8ebf7; --muted: #8590ad;
+    --pink: #ff2d78; --green: #1de9a0; --red: #ff4d5e; --blue: #4cc3ff; --gold: #ffc531;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px;
+    background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #app { width: 100%; max-width: 640px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px; }
+  .screen { animation: masuk .35s ease; }
+  @keyframes masuk { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+  h1 { margin: 0 0 8px; font-size: 1.9rem; color: var(--pink); }
+  h2 { margin: 0 0 20px; font-size: 1.25rem; line-height: 1.5; }
+  p { color: var(--muted); line-height: 1.6; }
+  .hidden { display: none; }
+  button {
+    font: inherit; cursor: pointer; border: 0; border-radius: 10px; padding: 12px 22px;
+    background: var(--pink); color: #fff; font-weight: 600;
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:focus-visible, .opsi:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .info { display: flex; justify-content: space-between; color: var(--muted); font-size: .9rem; margin-bottom: 10px; }
+  .bar { height: 6px; background: var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 22px; }
+  #progress { height: 100%; width: 0; background: var(--blue); transition: width .3s; }
+  #timer.urgent { color: var(--red); font-weight: 700; }
+  #opsi-list { display: grid; gap: 10px; margin-bottom: 20px; }
+  .opsi {
+    text-align: left; width: 100%; background: transparent; color: var(--text);
+    border: 1px solid var(--line); font-weight: 400;
+  }
+  .opsi:hover:not(:disabled) { border-color: var(--blue); }
+  .opsi.benar { background: rgba(29,233,160,.15); border-color: var(--green); color: var(--green); opacity: 1; }
+  .opsi.salah { background: rgba(255,77,94,.15); border-color: var(--red); color: var(--red); opacity: 1; }
+  .skor-besar { font-size: 3.5rem; font-weight: 800; color: var(--green); margin: 8px 0; }
+  .rekor { color: var(--gold); font-weight: 600; }
+  #pesan { min-height: 1.4em; margin: 0 0 12px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main id="app">
+
+  <!-- Layar 1: Mulai -->
+  <section id="layar-mulai" class="card screen">
+    <h1>Interactive Quiz App</h1>
+    <p>Jawab 7 pertanyaan seputar web dan JavaScript. Soal diacak setiap kali main, dan ada batas waktu 15 detik per soal.</p>
+    <p class="rekor">High score: <span id="high-mulai">0</span> / 7</p>
+    <button id="btn-mulai">Mulai quiz</button>
+  </section>
+
+  <!-- Layar 2: Quiz -->
+  <section id="layar-quiz" class="card screen hidden">
+    <div class="info">
+      <span id="nomor"></span>
+      <span id="timer"></span>
+    </div>
+    <div class="bar"><div id="progress"></div></div>
+    <h2 id="pertanyaan"></h2>
+    <div id="opsi-list"></div>
+    <p id="pesan"></p>
+    <button id="btn-lanjut" disabled>Lanjut</button>
+  </section>
+
+  <!-- Layar 3: Hasil -->
+  <section id="layar-hasil" class="card screen hidden">
+    <h1>Quiz selesai</h1>
+    <div class="skor-besar"><span id="skor-akhir">0</span> / <span id="total">0</span></div>
+    <p id="komentar"></p>
+    <p class="rekor">High score: <span id="high-hasil">0</span> / 7</p>
+    <button id="btn-restart">Main lagi</button>
+  </section>
+
+</main>
+
+<script>
+  // ===== Data soal =====
+  const bankSoal = [
+    { q: "Method untuk membuat elemen HTML baru lewat JavaScript adalah...",
+      o: ["document.createElement()", "document.newElement()", "document.makeTag()", "document.append()"], a: 0 },
+    { q: "Properti yang aman untuk mengisi teks elemen tanpa menafsirkan HTML adalah...",
+      o: ["innerHTML", "textContent", "outerHTML", "insertHTML"], a: 1 },
+    { q: "Event delegation memanfaatkan konsep...",
+      o: ["Event capturing saja", "Event bubbling", "Event blocking", "Event looping"], a: 1 },
+    { q: "Method untuk menyimpan data di LocalStorage adalah...",
+      o: ["localStorage.save()", "localStorage.add()", "localStorage.setItem()", "localStorage.put()"], a: 2 },
+    { q: "LocalStorage hanya menyimpan data dalam bentuk...",
+      o: ["Number", "String", "Boolean", "Array"], a: 1 },
+    { q: "Keyword untuk mendeklarasikan variabel yang nilainya tidak bisa diubah ulang adalah...",
+      o: ["var", "let", "const", "static"], a: 2 },
+    { q: "Method untuk memasang event listener pada elemen adalah...",
+      o: ["addEventListener()", "onEvent()", "listenTo()", "attachEvent()"], a: 0 }
+  ];
+
+  const WAKTU = 15;
+  const KUNCI = "quizHighScore";
+
+  // ===== Referensi elemen =====
+  const $ = (id) => document.getElementById(id);
+  const layar = { mulai: $("layar-mulai"), quiz: $("layar-quiz"), hasil: $("layar-hasil") };
+
+  // ===== State =====
+  let soal = [], indeks = 0, skor = 0, terjawab = false, sisa = WAKTU, interval = null;
+
+  // ===== LocalStorage (dibungkus try/catch) =====
+  function ambilHigh() {
+    try { return Number(localStorage.getItem(KUNCI)) || 0; } catch (e) { return 0; }
+  }
+  function simpanHigh(nilai) {
+    try { localStorage.setItem(KUNCI, String(nilai)); } catch (e) { /* abaikan */ }
+  }
+  function tampilkanHigh() {
+    $("high-mulai").textContent = ambilHigh();
+    $("high-hasil").textContent = ambilHigh();
+  }
+
+  // ===== Navigasi antar layar (SPA, tanpa reload) =====
+  function tampilkan(nama) {
+    Object.keys(layar).forEach((k) => layar[k].classList.toggle("hidden", k !== nama));
+  }
+
+  // ===== Acak soal (Fisher-Yates) =====
+  function acak(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // ===== Timer per soal =====
+  function mulaiTimer() {
+    clearInterval(interval);
+    sisa = WAKTU;
+    renderTimer();
+    interval = setInterval(() => {
+      sisa--;
+      renderTimer();
+      if (sisa <= 0) waktuHabis();
+    }, 1000);
+  }
+  function renderTimer() {
+    $("timer").textContent = "Sisa " + sisa + " detik";
+    $("timer").classList.toggle("urgent", sisa <= 5);
+  }
+  function waktuHabis() {
+    clearInterval(interval);
+    terjawab = true;
+    tandaiJawabanBenar();
+    kunciOpsi();
+    $("pesan").textContent = "Waktu habis.";
+    $("pesan").style.color = "var(--red)";
+    $("btn-lanjut").disabled = false;
+  }
+
+  // ===== Render soal dengan createElement / textContent =====
+  function renderSoal() {
+    const s = soal[indeks];
+    terjawab = false;
+    $("nomor").textContent = "Soal " + (indeks + 1) + " dari " + soal.length;
+    $("progress").style.width = (indeks / soal.length) * 100 + "%";
+    $("pertanyaan").textContent = s.q;
+    $("pesan").textContent = "";
+    $("btn-lanjut").disabled = true;
+    $("btn-lanjut").textContent = indeks === soal.length - 1 ? "Lihat hasil" : "Lanjut";
+
+    const wadah = $("opsi-list");
+    wadah.replaceChildren();
+    s.o.forEach((teks, i) => {
+      const btn = document.createElement("button");
+      btn.className = "opsi";
+      btn.dataset.index = i;
+      btn.textContent = teks;
+      wadah.appendChild(btn);
+    });
+
+    layar.quiz.classList.remove("screen");
+    void layar.quiz.offsetWidth;          // restart animasi transisi
+    layar.quiz.classList.add("screen");
+    mulaiTimer();
+  }
+
+  function kunciOpsi() {
+    document.querySelectorAll(".opsi").forEach((b) => (b.disabled = true));
+  }
+  function tandaiJawabanBenar() {
+    const benar = document.querySelector('.opsi[data-index="' + soal[indeks].a + '"]');
+    if (benar) benar.classList.add("benar");
+  }
+
+  // ===== Event delegation: satu listener di wadah opsi =====
+  $("opsi-list").addEventListener("click", (e) => {
+    const btn = e.target.closest(".opsi");
+    if (!btn || terjawab) return;
+    terjawab = true;
+    clearInterval(interval);
+
+    const dipilih = Number(btn.dataset.index);
+    if (dipilih === soal[indeks].a) {
+      skor++;
+      btn.classList.add("benar");
+      $("pesan").textContent = "Benar!";
+      $("pesan").style.color = "var(--green)";
+    } else {
+      btn.classList.add("salah");
+      tandaiJawabanBenar();
+      $("pesan").textContent = "Salah. Jawaban yang benar sudah ditandai hijau.";
+      $("pesan").style.color = "var(--red)";
+    }
+    kunciOpsi();
+    $("btn-lanjut").disabled = false;
+  });
+
+  // ===== Alur quiz =====
+  function mulaiQuiz() {
+    soal = acak(bankSoal);
+    indeks = 0;
+    skor = 0;
+    tampilkan("quiz");
+    renderSoal();
+  }
+
+  function lanjut() {
+    indeks++;
+    if (indeks < soal.length) renderSoal();
+    else selesai();
+  }
+
+  function selesai() {
+    clearInterval(interval);
+    if (skor > ambilHigh()) simpanHigh(skor);   // high score baru
+    $("skor-akhir").textContent = skor;
+    $("total").textContent = soal.length;
+    const persen = skor / soal.length;
+    $("komentar").textContent =
+      persen === 1 ? "Sempurna! Semua jawabanmu benar." :
+      persen >= 0.6 ? "Bagus! Terus berlatih untuk nilai sempurna." :
+      "Coba lagi. Pelajari materinya, lalu main ulang.";
+    tampilkanHigh();
+    tampilkan("hasil");
+  }
+
+  // ===== Tombol =====
+  $("btn-mulai").addEventListener("click", mulaiQuiz);
+  $("btn-lanjut").addEventListener("click", lanjut);
+  $("btn-restart").addEventListener("click", mulaiQuiz);   // restart tanpa reload
+
+  // ===== Inisialisasi =====
+  tampilkanHigh();
+</script>
+</body>
+</html>
